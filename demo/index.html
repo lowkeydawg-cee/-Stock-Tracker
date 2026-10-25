@@ -218,13 +218,25 @@ function section(sql, name) {
   return hit ? hit.slice(name.length) : '';
 }
 
+// When the PGlite runtime files are published next to this page, use them
+// instead of letting PGlite fetch them from the CDN.
+async function localRuntime() {
+  try {
+    const w = await fetch('pglite.wasm');
+    let d = await fetch('pglite.data');
+    if (!d.ok) d = await fetch('pglite.data.txt');  // some hosts only serve the bundle under a text name
+    if (!w.ok || !d.ok) return {};
+    return { wasmModule: await WebAssembly.compile(await w.arrayBuffer()), fsBundle: new Blob([await d.arrayBuffer()]) };
+  } catch { return {}; }
+}
+
 async function boot() {
   const [setup, schema, seed] = await Promise.all([
     text(['demo-setup.sql']),
     text(['schema.sql', '../supabase/migrations/20261025120000_initial_schema.sql']),
     text(['seed.sql', '../supabase/seed.sql']),
   ]);
-  db = await PGlite.create();
+  db = await PGlite.create(await localRuntime());
   await db.exec(section(setup, 'BEFORE_SCHEMA'));
   await db.exec(schema);
   await db.exec(seed);
