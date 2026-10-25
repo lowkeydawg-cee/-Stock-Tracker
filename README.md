@@ -6,6 +6,10 @@ Next.js (App Router), Tailwind, Supabase and Vercel. One deployment serves many 
 **Status:** Step 1 (database schema) is done. Next up: Step 2 (checkout, POS sale and
 reservation functions), Step 3 (UI flows), Step 4 (MVP roadmap).
 
+## Try it
+
+`demo/` is a playground that runs this exact migration in the browser (via PGlite, Postgres compiled to WebAssembly). Open `demo/index.html` through any static server, or use the Vercel deployment. Reload to reset.
+
 ## What's here
 
 ```
@@ -13,6 +17,10 @@ supabase/
   migrations/20261025120000_initial_schema.sql   tables, enums, triggers, access rules (RLS)
   seed.sql                                        one demo shop with products and stock
   tests/smoke_test.sql                            27 checks; runs in a transaction and rolls back
+demo/
+  index.html                                      in-browser playground (restock, POS, online orders, stress tests)
+  demo-setup.sql                                  Supabase stand-ins + demo people for the playground
+docs/how-it-works.mp4                             short explainer video
 ```
 
 ## Run it

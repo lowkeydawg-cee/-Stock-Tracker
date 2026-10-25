@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [{ "source": "/", "destination": "/demo/", "permanent": false }],
+  "headers": [{ "source": "/supabase/(.*)", "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }] }]
+}

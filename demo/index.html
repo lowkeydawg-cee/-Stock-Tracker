@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock Tracker Playground</title>
+<meta name="description" content="Try the Stock Tracker database live: restock, sell at the counter, take online orders and watch the stock rules hold.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a stockroom workbench. Inventory grid as the main surface, actions in a side rail, logs below. */
+:root {
+  --bg: #f3f5f7; --panel: #ffffff; --ink: #18212d; --muted: #5d6b7c; --line: #dfe4ea;
+  --accent: #0f6e63; --accent-ink: #ffffff; --accent-soft: #e3f2ef;
+  --warn: #9a5b00; --warn-soft: #fdf0dc; --bad: #b42335; --bad-soft: #fbe5e8; --good: #1c7a3e; --good-soft: #e3f4e8;
+  --held: #7a4fb0; --held-soft: #efe8f8;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161d; --panel: #18202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #2a3542;
+  --accent: #3cb8a6; --accent-ink: #0b1a18; --accent-soft: #143430;
+  --warn: #f0b25a; --warn-soft: #3a2c12; --bad: #f07a88; --bad-soft: #3d1a20; --good: #63c98a; --good-soft: #15321f;
+  --held: #b996ec; --held-soft: #2c2240; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11161d; --panel: #18202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #2a3542;
+  --accent: #3cb8a6; --accent-ink: #0b1a18; --accent-soft: #143430;
+  --warn: #f0b25a; --warn-soft: #3a2c12; --bad: #f07a88; --bad-soft: #3d1a20; --good: #63c98a; --good-soft: #15321f;
+  --held: #b996ec; --held-soft: #2c2240; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font-size: 26px; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.sub { color: var(--muted); margin: 2px 0 0; max-width: 70ch; }
+.shopname { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+@media (max-width: 980px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.col { display: grid; gap: 18px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.panel > header { margin-bottom: 10px; align-items: baseline; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; }
+.sku { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.big { font-weight: 600; font-size: 16px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.p-ok { background: var(--good-soft); color: var(--good); }
+.p-low { background: var(--warn-soft); color: var(--warn); }
+.p-out { background: var(--bad-soft); color: var(--bad); }
+.p-held { background: var(--held-soft); color: var(--held); }
+.p-acc { background: var(--accent-soft); color: var(--accent); }
+.p-mute { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.held { color: var(--held); }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+input[type=number], select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+input[type=number] { width: 62px; }
+textarea { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 84px; resize: vertical; }
+button { font: inherit; font-size: 13.5px; font-weight: 600; border-radius: 6px; padding: 5px 11px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink); white-space: nowrap; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.danger { color: var(--bad); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+.form { display: grid; gap: 10px; }
+.form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.form label { font-size: 13px; color: var(--muted); display: grid; gap: 3px; }
+.orders { display: grid; gap: 10px; margin-top: 12px; }
+.order { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; }
+.order .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.order .num { font-family: var(--mono); font-weight: 500; }
+.order .meta { color: var(--muted); font-size: 13px; }
+.timer { font-family: var(--mono); font-size: 12.5px; color: var(--held); }
+.tests { display: grid; gap: 8px; }
+.test { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.test:last-child { border-bottom: 0; }
+.test p { margin: 0; font-size: 13.5px; min-width: 0; flex: 1 1 220px; }
+.result { font-size: 13px; border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.r-bad { background: var(--bad-soft); color: var(--bad); }
+.r-good { background: var(--good-soft); color: var(--good); }
+.dots { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.dot { width: 16px; height: 16px; border-radius: 50%; }
+.d-ok { background: var(--good); } .d-no { background: var(--bad); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.delta-pos { color: var(--good); } .delta-neg { color: var(--bad); }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); max-width: min(560px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 8px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18); z-index: 20; }
+#boot { padding: 40px 16px; text-align: center; color: var(--muted); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+details summary { cursor: pointer; font-weight: 600; }
+pre.out { margin: 8px 0 0; font-family: var(--mono); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-x: auto; max-height: 320px; }
+@media (prefers-reduced-motion: no-preference) { tr.flash td { animation: flash 1.2s ease-out; } @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Stock Tracker Playground</h1>
+      <p class="sub">This page runs the real Stock Tracker database (the same migration that's in the repo) inside your browser. Try selling, ordering and breaking things. Reload to start fresh.</p>
+    </div>
+    <div class="actions"><span class="shopname" id="shopname">Demo Corner Shop</span><button id="reset" type="button">Reset demo</button></div>
+  </header>
+
+  <div id="boot" class="panel">Starting the database in your browser… this takes a few seconds the first time.</div>
+
+  <div id="app" class="grid" hidden>
+    <div class="col">
+      <section class="panel">
+        <header><h2>Stock</h2><div class="legend"><span><b>On hand</b> = on the shelf</span><span class="held"><b>Held</b> = reserved by unpaid online orders</span><span><b>Free</b> = can be sold</span></div></header>
+        <div class="scroll"><table>
+          <thead><tr><th>Item</th><th class="num">On hand</th><th class="num">Held</th><th class="num">Free</th><th>Status</th><th class="num">Qty</th><th class="num">Do it</th></tr></thead>
+          <tbody id="stock"></tbody>
+        </table></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Try to break it</h2><p class="hint">Each button attempts something the database should refuse.</p></header>
+        <div class="tests">
+          <div class="test"><p><b>Rush hour.</b> 20 shoppers each try to buy 1 <span id="rushName">item</span> at the counter.</p>
+            <div class="actions"><select id="rushSku" aria-label="Item for rush test"></select><button id="rush" type="button">Run</button></div>
+            <div id="rushOut" style="flex-basis:100%"></div></div>
+          <div class="test"><p><b>Sell more than is free.</b> Counter sale of 1 more than the free stock of the first item.</p><button data-break="oversell" type="button">Try</button></div>
+          <div class="test"><p><b>Edit the stock number directly</b>, skipping the log.</p><button data-break="direct" type="button">Try</button></div>
+          <div class="test"><p><b>Rewrite history.</b> Change an entry in the activity log.</p><button data-break="ledger" type="button">Try</button></div>
+          <div class="test"><p><b>Ship an unpaid order.</b> Jump a pending order straight to shipped.</p><button data-break="ship" type="button">Try</button></div>
+          <div class="test"><p><b>Cross the wall.</b> As Lee, the owner of another shop, add a product to this shop.</p><button data-break="cross" type="button">Try</button></div>
+          <div id="breakOut" style="flex-basis:100%"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Activity log</h2><p class="hint">Every stock change, newest first. Entries can't be edited or deleted.</p></header>
+        <div class="scroll"><table>
+          <thead><tr><th>Time</th><th>What</th><th>Item</th><th class="num">Shelf</th><th class="num">Held</th><th class="num">After</th><th>Order</th></tr></thead>
+          <tbody id="log"></tbody>
+        </table></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel">
+        <header><h2>Online order</h2></header>
+        <form id="orderForm" class="form">
+          <div class="row">
+            <label>Item<select id="oSku"></select></label>
+            <label>Qty<input id="oQty" type="number" min="1" value="2"></label>
+          </div>
+          <div class="row">
+            <label>Delivery<select id="oFul"><option value="pickup">Pickup in store</option><option value="delivery">Delivery</option></select></label>
+            <button class="primary" type="submit">Place order</button>
+          </div>
+          <p class="hint">Placing an order holds the stock. Confirming payment turns the hold into a sale; cancelling gives it back.</p>
+        </form>
+        <div id="orders" class="orders"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Low-stock alerts</h2></header>
+        <div id="alerts"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Who sees what</h2><p class="hint">Counted by the database's own access rules, logged in as each person.</p></header>
+        <div class="scroll"><table>
+          <thead><tr><th>Person</th><th class="num">Products</th><th class="num">Stock rows</th><th class="num">Orders</th></tr></thead>
+          <tbody id="access"></tbody>
+        </table></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>SQL console</summary>
+          <p class="hint">Runs as the database admin. Try <span class="mono">select * from inventory_overview</span>.</p>
+          <textarea id="sql" spellcheck="false">select reason, sku, on_hand_delta, reserved_delta, on_hand_after
+from inventory_movements m join product_variants v on v.id = m.variant_id
+order by m.id desc limit 10;</textarea>
+          <div class="actions" style="justify-content:flex-start;margin-top:6px"><button id="runSql" type="button">Run</button></div>
+          <pre id="sqlOut" class="out" hidden></pre>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="toast" hidden></div>
+
+<script type="module">
+import { PGlite } from 'https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.3.16/dist/index.js';
+
+const SHOP = '11111111-1111-4111-8111-111111111111';
+const PEOPLE = {
+  owner:    { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Amara, owner' },
+  cashier:  { id: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'Jo, cashier (staff)' },
+  customer: { id: 'aaaaaaaa-0000-4000-8000-000000000003', name: 'Sam, customer' },
+  other:    { id: 'aaaaaaaa-0000-4000-8000-000000000004', name: 'Lee, owner of another shop' },
+};
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = c => '$' + (c / 100).toFixed(2);
+let db;
+
+async function text(paths) {
+  for (const p of paths) { try { const r = await fetch(p); if (r.ok) return await r.text(); } catch {} }
+  throw new Error('Could not load ' + paths[0]);
+}
+function section(sql, name) {
+  const parts = sql.split(/^-- @@ /m);
+  const hit = parts.find(p => p.startsWith(name));
+  return hit ? hit.slice(name.length) : '';
+}
+
+async function boot() {
+  const [setup, schema, seed] = await Promise.all([
+    text(['demo-setup.sql']),
+    text(['schema.sql', '../supabase/migrations/20261025120000_initial_schema.sql']),
+    text(['seed.sql', '../supabase/seed.sql']),
+  ]);
+  db = await PGlite.create();
+  await db.exec(section(setup, 'BEFORE_SCHEMA'));
+  await db.exec(schema);
+  await db.exec(seed);
+  await db.exec(section(setup, 'AFTER_SEED'));
+}
+
+// Friendly translations of the database's refusals.
+function explain(e) {
+  const m = e?.message || String(e);
+  const map = [
+    ['inventory_reserved_within_stock', 'Not enough free stock. Some units are held for unpaid online orders.'],
+    ['inventory_on_hand_nonnegative', 'Not enough stock on the shelf.'],
+    ['only change through inventory_movements', 'Stock numbers can only change through a logged movement.'],
+    ['append-only', 'The activity log is append-only: entries can\'t be edited or deleted.'],
+    ['cannot move from', 'That order status change isn\'t allowed.'],
+    ['row-level security', 'Access denied: that person has no rights in this shop.'],
+    ['idempotency_key', 'Duplicate request: this exact sale was already recorded.'],
+  ];
+  const hit = map.find(([k]) => m.includes(k));
+  return { friendly: hit ? hit[1] : 'The database refused this: ' + m, raw: m };
+}
+let toastTimer;
+function toast(msg, kind = 'good') {
+  const t = $('#toast');
+  t.textContent = msg; t.className = kind === 'good' ? 'r-good' : 'r-bad'; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 4200);
+}
+async function act(label, fn) {
+  try { await db.transaction(fn); toast(label); }
+  catch (e) { toast(explain(e).friendly, 'bad'); }
+  await render();
+}
+const asUser = (tx, id) => tx.query(`select set_config('request.jwt.claim.sub', $1, true)`, [id ?? '']);
+
+// ---- Actions: these are prototypes of the Step 2 database functions ----
+async function restock(variant, qty) {
+  await act(`Restocked +${qty}`, async tx => {
+    await asUser(tx, PEOPLE.owner.id);
+    await tx.query(`insert into inventory_movements (shop_id, variant_id, reason, on_hand_delta, note) values ($1,$2,'restock',$3,'delivery received')`, [SHOP, variant, qty]);
+  });
+}
+async function posSale(tx, variant, qty, key) {
+  await asUser(tx, PEOPLE.cashier.id);
+  const o = await tx.query(`insert into orders (shop_id, channel, fulfillment_method, status, payment_status, payment_method) values ($1,'pos','in_store','completed','paid','cash') returning id`, [SHOP]);
+  const id = o.rows[0].id;
+  await tx.query(`insert into order_items (order_id, variant_id, quantity) values ($1,$2,$3)`, [id, variant, qty]);
+  await tx.query(`insert into inventory_movements (shop_id, variant_id, reason, on_hand_delta, order_id, idempotency_key) values ($1,$2,'sale_pos',$3,$4,$5)`, [SHOP, variant, -qty, id, key ?? crypto.randomUUID()]);
+}
+async function sell(variant, qty) { await act(`Sold ${qty} at the counter`, tx => posSale(tx, variant, qty)); }
+
+async function placeOrder(variant, qty, ful) {
+  await act(`Order placed, ${qty} held`, async tx => {
+    await asUser(tx, PEOPLE.customer.id);
+    const o = await tx.query(
+      `insert into orders (shop_id, channel, fulfillment_method, customer_id, customer_email, customer_name, shipping_address)
+       values ($1,'online',$2::fulfillment_method,$3,'sam@example.com','Sam', case when $2::text = 'delivery' then '{"line1":"12 Market St","city":"Springfield"}'::jsonb end) returning id`,
+      [SHOP, ful, PEOPLE.customer.id]);
+    const id = o.rows[0].id;
+    await tx.query(`insert into order_items (order_id, variant_id, quantity) values ($1,$2,$3)`, [id, variant, qty]);
+    const r = await tx.query(
+      `insert into stock_reservations (shop_id, order_id, variant_id, quantity, expires_at)
+       select $1,$2,$3,$4, now() + make_interval(mins => s.reservation_ttl_minutes) from shops s where s.id = $1 returning id`,
+      [SHOP, id, variant, qty]);
+    await tx.query(`insert into inventory_movements (shop_id, variant_id, reason, reserved_delta, order_id, reservation_id) values ($1,$2,'reservation',$3,$4,$5)`,
+      [SHOP, variant, qty, id, r.rows[0].id]);
+  });
+}
+async function confirmPayment(order) {
+  await act('Payment confirmed, stock deducted', async tx => {
+    await asUser(tx, PEOPLE.cashier.id);
+    const res = await tx.query(`select id, variant_id, quantity from stock_reservations where order_id = $1 and status = 'active'`, [order]);
+    for (const r of res.rows) {
+      await tx.query(`insert into inventory_movements (shop_id, variant_id, reason, on_hand_delta, reserved_delta, order_id, reservation_id) values ($1,$2,'sale_online',$3,$3,$4,$5)`,
+        [SHOP, r.variant_id, -r.quantity, order, r.id]);
+      await tx.query(`update stock_reservations set status = 'committed', resolved_at = now() where id = $1`, [r.id]);
+    }
+    await tx.query(`update orders set status = 'confirmed', payment_status = 'paid', payment_method = 'online' where id = $1`, [order]);
+  });
+}
+async function releaseOrder(tx, order, why) {
+  const res = await tx.query(`select id, variant_id, quantity from stock_reservations where order_id = $1 and status = 'active'`, [order]);
+  for (const r of res.rows) {
+    await tx.query(`insert into inventory_movements (shop_id, variant_id, reason, reserved_delta, order_id, reservation_id, note) values ($1,$2,'reservation_release',$3,$4,$5,$6)`,
+      [SHOP, r.variant_id, -r.quantity, order, r.id, why]);
+    await tx.query(`update stock_reservations set status = $2, resolved_at = now() where id = $1`, [r.id, why === 'hold expired' ? 'expired' : 'released']);
+  }
+  await tx.query(`update orders set status = 'cancelled' where id = $1`, [order]);
+}
+async function cancelOrder(order) {
+  await act('Order cancelled, hold released', async tx => { await asUser(tx, PEOPLE.cashier.id); await releaseOrder(tx, order, 'cancelled'); });
+}
+async function expireOrder(order) {
+  await act('Hold expired, stock released', async tx => { await asUser(tx, null); await releaseOrder(tx, order, 'hold expired'); });
+}
+async function advance(order, to) {
+  await act(`Order marked ${to.replace(/_/g, ' ')}`, async tx => {
+    await asUser(tx, PEOPLE.cashier.id);
+    await tx.query(`update orders set status = $2 where id = $1`, [order, to]);
+  });
+}
+
+// ---- Break tests ----
+async function tryBreak(kind) {
+  const out = $('#breakOut');
+  const first = (await db.query(`select variant_id, available from inventory_overview where shop_id = $1 order by sku limit 1`, [SHOP])).rows[0];
+  const pending = (await db.query(`select id from orders where shop_id = $1 and status = 'pending' limit 1`, [SHOP])).rows[0];
+  const attempts = {
+    oversell: tx => posSale(tx, first.variant_id, first.available + 1),
+    direct: tx => tx.query(`update inventory_items set on_hand = 999 where shop_id = $1`, [SHOP]),
+    ledger: tx => tx.query(`update inventory_movements set on_hand_delta = 1000 where id = (select max(id) from inventory_movements)`),
+    ship: async tx => {
+      if (!pending) throw new Error('Place an online order first, then try again.');
+      await tx.query(`update orders set status = 'shipped' where id = $1`, [pending.id]);
+    },
+    cross: async tx => {
+      await tx.query(`set local role authenticated`);
+      await asUser(tx, PEOPLE.other.id);
+      await tx.query(`insert into products (shop_id, name, slug) values ($1,'Sneaky product','sneaky')`, [SHOP]);
+    },
+  };
+  try {
+    await db.transaction(attempts[kind]);
+    out.innerHTML = `<div class="result r-bad">That went through, which it shouldn't have.</div>`;
+  } catch (e) {
+    const x = explain(e);
+    const preset = e.message.startsWith('Place an online') ? e.message : null;
+    out.innerHTML = preset ? `<div class="result r-bad">${esc(preset)}</div>`
+      : `<div class="result r-good"><b>Refused.</b> ${esc(x.friendly)}<div class="mono" style="margin-top:4px;opacity:.8">${esc(x.raw)}</div></div>`;
+  }
+  await render();
+}
+async function rush() {
+  const variant = $('#rushSku').value;
+  let ok = 0, no = 0, dots = '';
+  for (let i = 0; i < 20; i++) {
+    try { await db.transaction(tx => posSale(tx, variant, 1)); ok++; dots += '<span class="dot d-ok" title="sold"></span>'; }
+    catch { no++; dots += '<span class="dot d-no" title="refused"></span>'; }
+  }
+  const left = (await db.query(`select on_hand, reserved from inventory_items where variant_id = $1`, [variant])).rows[0];
+  $('#rushOut').innerHTML = `<div class="result ${ok ? 'r-good' : 'r-bad'}"><b>${ok} sold, ${no} refused.</b> Shelf now ${left.on_hand}, still holding ${left.reserved} for online orders. Stock never went below zero.<div class="dots">${dots}</div></div>`;
+  await render();
+}
+
+// ---- Rendering ----
+let lastStock = {};
+async function render() {
+  const stock = (await db.query(`select * from inventory_overview where shop_id = $1 order by product_name, sku`, [SHOP])).rows;
+  $('#stock').innerHTML = stock.map(r => {
+    const st = r.available <= 0 ? ['p-out', 'Sold out'] : r.is_low_stock ? ['p-low', 'Low'] : ['p-ok', 'In stock'];
+    const changed = lastStock[r.variant_id] !== undefined && lastStock[r.variant_id] !== `${r.on_hand}/${r.reserved}`;
+    return `<tr class="${changed ? 'flash' : ''}">
+      <td><div>${esc(r.product_name)} <span class="hint">· ${esc(r.variant_name)}</span></div><div class="sku">${esc(r.sku)} · ${money(r.price_cents)}</div></td>
+      <td class="num big">${r.on_hand}</td><td class="num held">${r.reserved || ''}</td><td class="num big">${r.available}</td>
+      <td><span class="pill ${st[0]}">${st[1]}</span></td>
+      <td class="num"><input type="number" min="1" value="1" aria-label="Quantity for ${esc(r.sku)}" id="q-${r.variant_id}"></td>
+      <td><div class="actions"><button type="button" data-restock="${r.variant_id}">Restock</button><button type="button" class="primary" data-sell="${r.variant_id}">Sell at counter</button></div></td></tr>`;
+  }).join('');
+  lastStock = Object.fromEntries(stock.map(r => [r.variant_id, `${r.on_hand}/${r.reserved}`]));
+
+  const opts = stock.map(r => `<option value="${r.variant_id}">${esc(r.product_name)} · ${esc(r.variant_name)} (${r.available} free)</option>`).join('');
+  for (const id of ['#oSku', '#rushSku']) { const el = $(id), v = el.value; el.innerHTML = opts; if (v) el.value = v; }
+  if (!$('#rushSku').dataset.init) { const l = stock.find(r => r.sku === 'TEE-L'); if (l) $('#rushSku').value = l.variant_id; $('#rushSku').dataset.init = 1; }
+
+  const orders = (await db.query(`
+    select o.id, o.order_number, o.status, o.payment_status, o.fulfillment_method, o.total_cents,
+           (select string_agg(i.quantity || ' × ' || i.product_name || ' ' || i.variant_name, ', ') from order_items i where i.order_id = o.id) as items,
+           (select min(r.expires_at) from stock_reservations r where r.order_id = o.id and r.status = 'active') as expires
+      from orders o where o.shop_id = $1 and o.channel = 'online' order by o.order_number desc limit 8`, [SHOP])).rows;
+  const next = { confirmed: o => o.fulfillment_method === 'pickup' ? ['ready_for_pickup', 'Ready for pickup'] : ['packed', 'Mark packed'],
+                 packed: () => ['shipped', 'Mark shipped'], shipped: () => ['completed', 'Mark delivered'], ready_for_pickup: () => ['completed', 'Mark collected'] };
+  const pillFor = s => ({ pending: 'p-held', confirmed: 'p-acc', packed: 'p-acc', shipped: 'p-acc', ready_for_pickup: 'p-acc', completed: 'p-ok', cancelled: 'p-mute', refunded: 'p-mute' }[s]);
+  $('#orders').innerHTML = orders.length ? orders.map(o => {
+    const n = next[o.status]?.(o);
+    const mins = o.expires ? Math.max(0, Math.round((new Date(o.expires) - Date.now()) / 60000)) : null;
+    return `<div class="order"><div class="top"><span class="num">#${o.order_number}</span><span class="pill ${pillFor(o.status)}">${esc(o.status.replace(/_/g, ' '))}</span></div>
+      <div class="meta">${esc(o.items)} · ${money(o.total_cents)} · ${o.fulfillment_method}</div>
+      ${o.status === 'pending' ? `<div class="timer">Stock held for ${mins} more min, then it's released</div>` : ''}
+      <div class="actions" style="justify-content:flex-start">
+        ${o.status === 'pending' ? `<button class="primary" type="button" data-pay="${o.id}">Confirm payment</button><button type="button" data-cancel="${o.id}">Cancel</button><button type="button" data-expire="${o.id}" title="Simulate the 15-minute hold running out">Let hold expire</button>` : ''}
+        ${n ? `<button type="button" data-adv="${o.id}" data-to="${n[0]}">${n[1]}</button>` : ''}
+      </div></div>`;
+  }).join('') : `<p class="hint">No online orders yet. Place one above to see stock get held.</p>`;
+
+  const alerts = (await db.query(`select a.status, a.available_at_open, a.threshold, v.sku, p.name, v.name as vname, a.created_at
+      from low_stock_alerts a join product_variants v on v.id = a.variant_id join products p on p.id = v.product_id
+      where a.shop_id = $1 order by (a.status = 'resolved'), a.created_at desc limit 8`, [SHOP])).rows;
+  $('#alerts').innerHTML = alerts.length ? `<div class="tests">${alerts.map(a => `<div class="test"><p>${esc(a.name)} · ${esc(a.vname)} <span class="sku">${esc(a.sku)}</span><br><span class="hint">opened at ${a.available_at_open} free (alert at ${a.threshold} or fewer)</span></p><span class="pill ${a.status === 'resolved' ? 'p-ok' : 'p-low'}">${a.status === 'resolved' ? 'Resolved' : 'Open'}</span></div>`).join('')}</div>`
+    : `<p class="hint">No alerts. Sell an item down to 5 or fewer free and one opens by itself; restock and it closes.</p>`;
+
+  const log = (await db.query(`select m.created_at, m.reason, v.sku, m.on_hand_delta, m.reserved_delta, m.on_hand_after, m.reserved_after, o.order_number
+      from inventory_movements m join product_variants v on v.id = m.variant_id left join orders o on o.id = m.order_id
+      where m.shop_id = $1 order by m.id desc limit 14`, [SHOP])).rows;
+  const d = v => v ? `<span class="${v > 0 ? 'delta-pos' : 'delta-neg'}">${v > 0 ? '+' : ''}${v}</span>` : '';
+  const reasonLabel = { restock: 'Restock', sale_pos: 'Counter sale', sale_online: 'Online sale', reservation: 'Held for order', reservation_release: 'Hold released', stocktake: 'Stock count', return: 'Return', damage: 'Damage', adjustment: 'Adjustment' };
+  $('#log').innerHTML = log.map(m => `<tr><td class="mono">${new Date(m.created_at).toLocaleTimeString()}</td><td>${reasonLabel[m.reason] || m.reason}</td><td class="sku">${esc(m.sku)}</td>
+      <td class="num">${d(m.on_hand_delta)}</td><td class="num">${d(m.reserved_delta)}</td><td class="num mono">${m.on_hand_after} / ${m.reserved_after}</td><td class="mono">${m.order_number ? '#' + m.order_number : ''}</td></tr>`).join('');
+
+  const rows = [];
+  for (const [key, label, role] of [['anon', 'Shopper (not logged in)', 'anon'], ['customer', PEOPLE.customer.name, 'authenticated'], ['cashier', PEOPLE.cashier.name, 'authenticated'], ['owner', PEOPLE.owner.name, 'authenticated'], ['other', PEOPLE.other.name, 'authenticated']]) {
+    const c = await db.transaction(async tx => {
+      await tx.query(`set local role ${role}`);
+      await asUser(tx, PEOPLE[key]?.id ?? null);
+      const q = async t => (await tx.query(`select count(*)::int as n from ${t} where shop_id = $1`, [SHOP])).rows[0].n;
+      return [await q('products'), await q('inventory_items'), await q('orders')];
+    });
+    rows.push(`<tr><td>${esc(label)}</td>${c.map(n => `<td class="num ${n === 0 ? 'hint' : ''}">${n}</td>`).join('')}</tr>`);
+  }
+  $('#access').innerHTML = rows.join('');
+}
+
+// ---- Wiring ----
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const qty = id => Math.max(1, parseInt($('#q-' + id)?.value || '1', 10));
+  if (b.dataset.restock) await restock(b.dataset.restock, qty(b.dataset.restock));
+  else if (b.dataset.sell) await sell(b.dataset.sell, qty(b.dataset.sell));
+  else if (b.dataset.pay) await confirmPayment(b.dataset.pay);
+  else if (b.dataset.cancel) await cancelOrder(b.dataset.cancel);
+  else if (b.dataset.expire) await expireOrder(b.dataset.expire);
+  else if (b.dataset.adv) await advance(b.dataset.adv, b.dataset.to);
+  else if (b.dataset.break) await tryBreak(b.dataset.break);
+  else if (b.id === 'rush') { b.disabled = true; await rush(); b.disabled = false; }
+  else if (b.id === 'reset') location.reload();
+  else if (b.id === 'runSql') {
+    const out = $('#sqlOut'); out.hidden = false;
+    try {
+      const res = await db.exec($('#sql').value);
+      const last = res[res.length - 1];
+      if (!last?.fields?.length) out.textContent = 'Done.';
+      else {
+        const cols = last.fields.map(f => f.name);
+        const lines = [cols.join(' | '), ...last.rows.map(r => cols.map(c => typeof r[c] === 'object' && r[c] !== null && !(r[c] instanceof Date) ? JSON.stringify(r[c]) : String(r[c])).join(' | '))];
+        out.textContent = lines.join('\n') + `\n(${last.rows.length} rows)`;
+      }
+    } catch (err) { out.textContent = 'Error: ' + err.message; }
+    await render();
+  }
+});
+$('#orderForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await placeOrder($('#oSku').value, Math.max(1, parseInt($('#oQty').value || '1', 10)), $('#oFul').value);
+});
+
+boot().then(async () => {
+  $('#boot').hidden = true; $('#app').hidden = false;
+  await render();
+  window.__ready = true;
+}).catch(err => { $('#boot').textContent = 'The database could not start: ' + err.message; window.__error = err.message; });
+</script>
+</body>
+</html>
